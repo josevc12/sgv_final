@@ -13,7 +13,7 @@ METHODS = ["efectivo", "tarjeta", "transferencia", "mixto"]
 
 
 def build_pos_view(page, user_data, nav):
-    cart   = []   # [{"id_producto","nombre","cantidad","precio_unitario"}]
+    cart   = []   # [{id_producto, nombre, cantidad, precio_unitario}]
     state  = {"id_cliente": 1, "metodo": "efectivo"}
 
     # ── Campos búsqueda ────────────────────────────────────────────────────────
@@ -54,6 +54,27 @@ def build_pos_view(page, user_data, nav):
     result_box = ft.Container(visible=False, bgcolor=C["panel"],
                               border_radius=10, padding=pall(14),
                               content=ft.Column(spacing=4))
+
+    # Advertencia de caja cerrada (visible solo cuando aplica)
+    caja_warning = ft.Container(
+        visible=False,
+        bgcolor="#2A1A00",
+        border_radius=8,
+        padding=pall(10),
+        content=ft.Row(spacing=8, controls=[
+            ft.Icon(ft.Icons.WARNING_AMBER_ROUNDED, color=C["yellow"], size=18),
+            ft.Text(
+                "No tienes una caja abierta. La venta se registrará igualmente.",
+                size=12, color=C["yellow"],
+            ),
+        ]),
+    )
+
+    def check_caja_warning():
+        """Muestra o esconde la advertencia según si hay caja abierta."""
+        abierta = get_open_caja(user_data["id_usuario"])
+        caja_warning.visible = not abierta
+        page.update()
 
     def refresh_totals():
         sub   = sum(i["cantidad"] * i["precio_unitario"] for i in cart)
@@ -124,16 +145,16 @@ def build_pos_view(page, user_data, nav):
             show_snack(page, f"Stock insuficiente (disponible: {product['stock']})", False)
             return
 
-        # Si ya está en el carrito, sumar
+        # Si ya está en el carrito, sumar cantidad
         for item in cart:
             if item["id_producto"] == product["id"]:
                 item["cantidad"] += qty
                 break
         else:
             cart.append({
-                "id_producto":    product["id"],
-                "nombre":         product["nombre"],
-                "cantidad":       qty,
+                "id_producto":     product["id"],
+                "nombre":          product["nombre"],
+                "cantidad":        qty,
                 "precio_unitario": product["precio_venta"],
             })
 
@@ -146,10 +167,11 @@ def build_pos_view(page, user_data, nav):
 
     def do_sale(_):
         if not cart:
-            show_snack(page, "El carrito está vacío", False); return
-        if not get_open_caja(user_data["id_usuario"]):
-            show_snack(page, "Debes abrir caja antes de registrar ventas", False)
+            show_snack(page, "El carrito está vacío", False)
             return
+
+        # CORRECCIÓN: ya no bloquea si no hay caja abierta.
+        # Solo advierte con el banner amarillo pero permite continuar.
         try:
             result = confirm_sale(
                 id_usuario  = user_data["id_usuario"],
@@ -158,7 +180,7 @@ def build_pos_view(page, user_data, nav):
                 metodo_pago = state["metodo"],
                 username    = user_data["usuario"],
             )
-            # Mostrar resumen
+            # Mostrar resumen de venta exitosa
             result_box.content.controls.clear()
             result_box.content.controls += [
                 ft.Row(spacing=6, controls=[
@@ -168,10 +190,12 @@ def build_pos_view(page, user_data, nav):
                 ]),
                 ft.Text(f"Factura: {result['numero_factura']}",
                         size=13, color=C["text"]),
-                ft.Text(f"Subtotal: ${result['subtotal']:.2f}  |  "
-                        f"IVA: ${result['impuestos']:.2f}  |  "
-                        f"Total: ${result['total']:.2f}",
-                        size=13, color=C["lgrey"]),
+                ft.Text(
+                    f"Subtotal: ${result['subtotal']:.2f}  |  "
+                    f"IVA: ${result['impuestos']:.2f}  |  "
+                    f"Total: ${result['total']:.2f}",
+                    size=13, color=C["lgrey"],
+                ),
             ]
             result_box.visible = True
             cart.clear()
@@ -185,6 +209,7 @@ def build_pos_view(page, user_data, nav):
         refresh_cart()
 
     body = [
+        caja_warning,
         ft.Row(spacing=14, controls=[
             # Panel izquierdo – carrito
             ft.Container(expand=2, content=card(ft.Column(spacing=10, controls=[
@@ -218,3 +243,4 @@ def build_pos_view(page, user_data, nav):
     ]
     render_page(page, "pos", nav, user_data, body)
     refresh_cart()
+    check_caja_warning()
